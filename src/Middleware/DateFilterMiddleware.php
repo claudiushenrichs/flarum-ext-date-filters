@@ -12,6 +12,8 @@
 namespace GlowingBlue\DateFilters\Middleware;
 
 use Carbon\CarbonImmutable;
+use Flarum\Settings\SettingsRepositoryInterface;
+use Illuminate\Support\Arr;
 use Psr\Http\Message\ResponseInterface;
 use Psr\Http\Message\ServerRequestInterface;
 use Psr\Http\Server\MiddlewareInterface;
@@ -26,48 +28,85 @@ class DateFilterMiddleware implements MiddlewareInterface
     {
         $params = $request->getQueryParams();
 
-        if (($params['date'] ?? null) && !isset($params['filter']['created'])) {
-            $now = CarbonImmutable::now(self::TZ)->startOfDay();
+        if (!$this->isDiscussionListPath($request)) {
+            return $handler->handle($request);
+        }
 
-            $dateKey = $params['date'];
+        if (!$this->shouldApplyDateFilter($params)) {
+            return $handler->handle($request);
+        }
 
-            $dateFilters = [
-                'today'         => fn ($n) => [$n->toDateString(), $n->addDay()->toDateString()],
-                'yesterday'     => fn ($n) => [$n->subDay()->toDateString(), $n->toDateString()],
-                'past-7-days'   => fn ($n) => [$n->subDays(6)->toDateString(), $n->addDay()->toDateString()],
-                'past-30-days'  => fn ($n) => [$n->subDays(29)->toDateString(), $n->addDay()->toDateString()],
-                'past-365-days' => fn ($n) => [$n->subDays(364)->toDateString(), $n->addDay()->toDateString()],
-            ];
+        $dateKey = $params['date'] ?? null;
 
-            $createdValue = null;
+        $createdValue = $this->createdValueFromDateKey($dateKey, $params);
 
-            if ($dateKey === 'custom') {
-                $createdValue = $this->customRangeValue($params);
-            } elseif (isset($dateFilters[$dateKey])) {
-                [$start, $endExclusive] = $dateFilters[$dateKey]($now);
-                $createdValue = "{$start}..{$endExclusive}";
-            }
+        Arr::pull($params, 'date');
+        Arr::pull($params, 'start');
+        Arr::pull($params, 'end');
 
-            if ($createdValue) {
-                $params['filter']['created'] = $createdValue;
-
-                $token = 'created:'.$createdValue;
-
-                if (isset($params['q']) && $params['q'] !== '') {
-                    $params['q'] .= ' '.$token;
-                }
-
-                if (isset($params['filter']['q']) && $params['filter']['q'] !== '') {
-                    $params['filter']['q'] .= ' '.$token;
-                }
-            }
-
-            unset($params['date'], $params['start'], $params['end']);
-
+        if (!$createdValue) {
             return $handler->handle($request->withQueryParams($params));
         }
 
-        return $handler->handle($request);
+        $params = $this->applyCreatedToFilter($params, $createdValue);
+
+        $params = $this->applyCreatedToSearch($params, $createdValue);
+
+        return $handler->handle($request->withQueryParams($params));
+    }
+
+    private function shouldApplyDateFilter(array $params): bool
+    {
+        return isset($params['date']) && $params['date'] !== '' && !isset($params['filter']['created']);
+    }
+
+    private function createdValueFromDateKey(?string $dateKey, array $params): ?string
+    {
+        if (!is_string($dateKey) || $dateKey === '') {
+            return null;
+        }
+
+        if ($dateKey === 'custom') {
+            return $this->customRangeValue($params);
+        }
+
+        $now = CarbonImmutable::now(self::TZ)->startOfDay();
+
+        $ranges = [
+            'today'         => fn (CarbonImmutable $n) => [$n, $n->addDay()],
+            'yesterday'     => fn (CarbonImmutable $n) => [$n->subDay(), $n],
+            'past-7-days'   => fn (CarbonImmutable $n) => [$n->subDays(6), $n->addDay()],
+            'past-30-days'  => fn (CarbonImmutable $n) => [$n->subDays(29), $n->addDay()],
+            'past-365-days' => fn (CarbonImmutable $n) => [$n->subDays(364), $n->addDay()],
+        ];
+
+        if (!isset($ranges[$dateKey])) {
+            return null;
+        }
+
+        [$start, $endExclusive] = $ranges[$dateKey]($now);
+
+        return $start->toDateString().'..'.$endExclusive->toDateString();
+    }
+
+    private function applyCreatedToFilter(array $params, string $createdValue): array
+    {
+        $params['filter'] = array_merge($params['filter'] ?? [], [
+            'created' => $createdValue,
+        ]);
+
+        return $params;
+    }
+
+    private function applyCreatedToSearch(array $params, string $createdValue): array
+    {
+        $token = 'created:'.$createdValue;
+
+        if (isset($params['q']) && $params['q'] !== '') {
+            $params['q'] = trim($params['q'].' '.$token);
+        }
+
+        return $params;
     }
 
     private function customRangeValue(array $params): ?string
@@ -108,5 +147,29 @@ class DateFilterMiddleware implements MiddlewareInterface
         }
 
         return $date->startOfDay();
+    }
+
+    private function isDiscussionListPath(ServerRequestInterface $request): bool
+    {
+        $path = $request->getAttribute('originalUri')->getPath();
+
+        // Check for the 'index' route (showing all discussions)
+        $settings = resolve(SettingsRepositoryInterface::class);
+        $defaultRoute = $settings->get('default_route');
+
+        if ($defaultRoute === '/all') {
+            if ($path === '/') {
+                return true;
+            }
+        } elseif ($path === '/all') {
+            return true;
+        }
+
+        // Check for the 'tag' route (tag page)
+        if (substr($path, 0, 2) === '/t') {
+            return true;
+        }
+
+        return false;
     }
 }

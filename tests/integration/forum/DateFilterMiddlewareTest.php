@@ -59,7 +59,7 @@ class DateFilterMiddlewareTest extends TestCase
     public function can_filter_discussions_by_date_preset(string $preset, array $expectedDiscussionIds): void
     {
         $response = $this->send(
-            $this->request('GET', '/all')
+            $this->request('GET', '/')
                 ->withQueryParams(['date' => $preset])
         );
 
@@ -88,7 +88,7 @@ class DateFilterMiddlewareTest extends TestCase
         $endDate = Carbon::now()->subDays(6)->toDateString();
 
         $response = $this->send(
-            $this->request('GET', '/all')
+            $this->request('GET', '/')
                 ->withQueryParams([
                     'date'  => 'custom',
                     'start' => $startDate,
@@ -130,5 +130,17 @@ class DateFilterMiddlewareTest extends TestCase
         }
 
         return $decoded;
+    }
+
+    /**
+     * @test
+     */
+    public function test_no_query_params_returns_valid_response(): void
+    {
+        $response = $this->send(
+            $this->request('GET', '/')
+        );
+
+        $this->assertEquals(200, $response->getStatusCode());
     }
 }
