@@ -12,8 +12,10 @@ export interface ICustomDateRangeModalAttrs extends IInternalModalAttrs {
 }
 
 export default class CustomDateRangeModal<CustomAttrs extends ICustomDateRangeModalAttrs = ICustomDateRangeModalAttrs> extends Modal<CustomAttrs> {
-	protected start = '';
+	protected start = dayjs().startOf('day').format(FORMAT);
 	protected end = dayjs().startOf('day').format(FORMAT);
+
+	private pendingApply: { start: string; end: string } | null = null;
 
 	oninit(vnode: Mithril.Vnode) {
 		super.oninit(vnode);
@@ -21,6 +23,15 @@ export default class CustomDateRangeModal<CustomAttrs extends ICustomDateRangeMo
 		const params = app.search?.params?.() ?? {};
 		if (params.start) this.start = params.start;
 		if (params.end) this.end = params.end;
+	}
+
+	onremove(vnode: Mithril.Vnode) {
+		super.onremove(vnode);
+
+		if (this.pendingApply) {
+			this.attrs.onApply?.(this.pendingApply);
+			this.pendingApply = null;
+		}
 	}
 
 	className(): string {
@@ -51,6 +62,14 @@ export default class CustomDateRangeModal<CustomAttrs extends ICustomDateRangeMo
 					max={maxEnd}
 					oninput={(e: InputEvent) => {
 						this.start = (e.target as HTMLInputElement).value;
+
+						const startDate = dayjs(this.start, FORMAT, true);
+						if (!startDate.isValid()) return;
+
+						const endDate = dayjs(this.end, FORMAT, true);
+						if (endDate.isValid() && endDate.isBefore(startDate)) {
+							this.end = this.start;
+						}
 					}}
 				/>
 
@@ -67,6 +86,14 @@ export default class CustomDateRangeModal<CustomAttrs extends ICustomDateRangeMo
 					max={maxEnd}
 					oninput={(e: InputEvent) => {
 						this.end = (e.target as HTMLInputElement).value;
+
+						const endDate = dayjs(this.end, FORMAT, true);
+						if (!endDate.isValid()) return;
+
+						const startDate = dayjs(this.start, FORMAT, true);
+						if (startDate.isValid() && startDate.isAfter(endDate)) {
+							this.start = this.end;
+						}
 					}}
 				/>
 			</div>
@@ -95,7 +122,7 @@ export default class CustomDateRangeModal<CustomAttrs extends ICustomDateRangeMo
 				onclick={() => {
 					if (!this.isValid()) return;
 
-					this.attrs.onApply?.({ start: this.start, end: this.end });
+					this.pendingApply = { start: this.start, end: this.end };
 					this.hide();
 				}}
 			>
