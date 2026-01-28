@@ -9,9 +9,11 @@ export interface ICustomDateRangeModalAttrs extends IInternalModalAttrs {
     }) => void;
 }
 export default class CustomDateRangeModal<CustomAttrs extends ICustomDateRangeModalAttrs = ICustomDateRangeModalAttrs> extends Modal<CustomAttrs> {
-    protected start: string;
+    protected start: any;
     protected end: any;
+    private pendingApply;
     oninit(vnode: Mithril.Vnode): void;
+    onremove(vnode: Mithril.Vnode): void;
     className(): string;
     title(): string | NestedStringArray;
     content(): [Mithril.Children, Mithril.Children];
