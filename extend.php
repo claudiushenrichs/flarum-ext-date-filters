@@ -11,6 +11,7 @@
 
 namespace GlowingBlue\DateFilters;
 
+use Flarum\Api\Serializer\ForumSerializer;
 use Flarum\Extend;
 
 return [
@@ -23,6 +24,9 @@ return [
         ->css(__DIR__.'/resources/less/admin.less'),
 
     new Extend\Locales(__DIR__.'/resources/locale'),
+
+    (new Extend\ApiSerializer(ForumSerializer::class))
+        ->attributes(Api\AddForumAttributes::class),
 
     (new Extend\Middleware('forum'))
         ->add(Middleware\DateFilterMiddleware::class),
