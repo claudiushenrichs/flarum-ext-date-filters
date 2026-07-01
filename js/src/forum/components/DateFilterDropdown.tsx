@@ -4,15 +4,15 @@ import Button from 'flarum/common/components/Button';
 import Component, { ComponentAttrs } from 'flarum/common/Component';
 import Separator from 'flarum/common/components/Separator';
 import DateFilter from '../../common/DateFilter';
-import CustomDateRangeModal from '../components/CustomDateRangeModal';
 import ItemList from 'flarum/common/utils/ItemList';
+import dayjs from 'dayjs';
+import { FORMAT } from '../utils/createDateRangeUtil';
 
 import type Mithril from 'mithril';
-import type { NestedStringArray } from '@askvortsov/rich-icu-message-formatter';
 
 export interface IDateFilterDropdownAttrs extends ComponentAttrs {
 	dateFilterMap: Record<string, string>;
-	dateFilterOptions: Record<string, NestedStringArray>;
+	dateFilterOptions: Record<string, Mithril.Children>;
 }
 
 export default class DateFilterDropdown<CustomAttrs extends IDateFilterDropdownAttrs = IDateFilterDropdownAttrs> extends Component<CustomAttrs> {
@@ -29,15 +29,22 @@ export default class DateFilterDropdown<CustomAttrs extends IDateFilterDropdownA
 		);
 	}
 
-	dateFilterDropdownLabel(): string | NestedStringArray {
-		return (
-			(app.search.params().date === DateFilter.CUSTOM_DATE_PRESET &&
-				(app.search.params().start && app.search.params().end
-					? `${app.search.params().start} – ${app.search.params().end}`
-					: app.translator.trans('glowingblue-date-filters.forum.index_date_filter.custom_date_range_button'))) ||
-			this.attrs.dateFilterOptions[app.search.params().date] ||
-			Object.keys(this.attrs.dateFilterMap).map((key) => this.attrs.dateFilterOptions[key])[0]
-		);
+	dateFilterDropdownLabel(): Mithril.Children {
+		const params = app.search.state.params();
+		const customRangeLabel = app.translator.trans('glowingblue-date-filters.forum.index_date_filter.custom_date_range_button');
+
+		if (params.date === DateFilter.CUSTOM_DATE_PRESET) {
+			const start = dayjs(params.start, FORMAT, true);
+			const end = dayjs(params.end, FORMAT, true);
+
+			if (start.isValid() && end.isValid() && !end.isBefore(start)) {
+				return `${start.format(FORMAT)} – ${end.format(FORMAT)}`;
+			}
+
+			return customRangeLabel;
+		}
+
+		return this.attrs.dateFilterOptions[params.date] || Object.keys(this.attrs.dateFilterMap).map((key) => this.attrs.dateFilterOptions[key])[0];
 	}
 
 	dateFilterDropdownItems(): ItemList<Mithril.Children> {
@@ -53,10 +60,10 @@ export default class DateFilterDropdown<CustomAttrs extends IDateFilterDropdownA
 	presetFilterOptionsView() {
 		return Object.keys(this.attrs.dateFilterOptions).map((value) => {
 			const label = this.attrs.dateFilterOptions[value];
-			const active = (app.search.params().date || Object.keys(this.attrs.dateFilterMap)[0]) === value;
+			const active = (app.search.state.params().date || Object.keys(this.attrs.dateFilterMap)[0]) === value;
 
 			return (
-				<Button icon={active ? 'fas fa-check' : true} onclick={app.search.changeDate.bind(app.search, value)} active={active}>
+				<Button icon={active ? 'fas fa-check' : true} onclick={app.search.state.changeDate.bind(app.search.state, value)} active={active}>
 					{label}
 				</Button>
 			);
@@ -66,15 +73,15 @@ export default class DateFilterDropdown<CustomAttrs extends IDateFilterDropdownA
 	customRangeView() {
 		return (
 			<Button
-				icon={(app.search.params().date || Object.keys(this.attrs.dateFilterMap)[0]) === DateFilter.CUSTOM_DATE_PRESET ? 'fas fa-check' : true}
+				icon={(app.search.state.params().date || Object.keys(this.attrs.dateFilterMap)[0]) === DateFilter.CUSTOM_DATE_PRESET ? 'fas fa-check' : true}
 				onclick={() =>
-					app.modal.show(CustomDateRangeModal, {
+					app.modal.show(() => import('./CustomDateRangeModal'), {
 						onApply: (range: { start: string; end: string }) => {
-							app.search.changeDate('custom', range);
+							app.search.state.changeDate('custom', range);
 						},
 					})
 				}
-				active={(app.search.params().date || Object.keys(this.attrs.dateFilterMap)[0]) === DateFilter.CUSTOM_DATE_PRESET}
+				active={(app.search.state.params().date || Object.keys(this.attrs.dateFilterMap)[0]) === DateFilter.CUSTOM_DATE_PRESET}
 			>
 				{app.translator.trans('glowingblue-date-filters.forum.index_date_filter.custom_date_range_button')}
 			</Button>

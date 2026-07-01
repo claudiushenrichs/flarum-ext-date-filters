@@ -12,7 +12,10 @@
 namespace GlowingBlue\DateFilters\Tests\integration\forum;
 
 use Carbon\Carbon;
+use Flarum\Discussion\Discussion;
 use Flarum\Testing\integration\TestCase;
+use PHPUnit\Framework\Attributes\DataProvider;
+use PHPUnit\Framework\Attributes\Test;
 
 class DateFilterMiddlewareTest extends TestCase
 {
@@ -23,7 +26,7 @@ class DateFilterMiddlewareTest extends TestCase
         $this->extension('glowingblue-date-filters');
 
         $this->prepareDatabase([
-            'discussions' => [
+            Discussion::class => [
                 ['id' => 1, 'title' => ' Discussion Title', 'created_at' => Carbon::now()->subDays(380)->toDateTimeString(), 'user_id' => 1],
                 ['id' => 2, 'title' => ' Discussion Title', 'created_at' => Carbon::now()->subDays(366)->toDateTimeString(), 'user_id' => 1],
                 ['id' => 3, 'title' => ' Discussion Title', 'created_at' => Carbon::now()->subDays(330)->toDateTimeString(), 'user_id' => 1],
@@ -40,7 +43,7 @@ class DateFilterMiddlewareTest extends TestCase
         ]);
     }
 
-    public function datePresetProvider(): array
+    public static function datePresetProvider(): array
     {
         return [
             'today'         => ['today', [12]],
@@ -51,11 +54,8 @@ class DateFilterMiddlewareTest extends TestCase
         ];
     }
 
-    /**
-     * @test
-     *
-     * @dataProvider datePresetProvider
-     */
+    #[Test]
+    #[DataProvider('datePresetProvider')]
     public function can_filter_discussions_by_date_preset(string $preset, array $expectedDiscussionIds): void
     {
         $response = $this->send(
@@ -79,9 +79,7 @@ class DateFilterMiddlewareTest extends TestCase
         $this->assertSame($expectedDiscussionIds, $discussionIds, "Preset '{$preset}' returned unexpected discussions.");
     }
 
-    /**
-     * @test
-     */
+    #[Test]
     public function can_filter_discussions_by_custom_date_range(): void
     {
         $startDate = Carbon::now()->subDays(32)->toDateString();
@@ -132,9 +130,7 @@ class DateFilterMiddlewareTest extends TestCase
         return $decoded;
     }
 
-    /**
-     * @test
-     */
+    #[Test]
     public function test_no_query_params_returns_valid_response(): void
     {
         $response = $this->send(
@@ -142,5 +138,55 @@ class DateFilterMiddlewareTest extends TestCase
         );
 
         $this->assertEquals(200, $response->getStatusCode());
+    }
+
+    #[Test]
+    public function unknown_date_preset_returns_all_discussions(): void
+    {
+        $response = $this->send(
+            $this->request('GET', '/')
+                ->withQueryParams(['date' => 'not-a-real-preset'])
+        );
+
+        $this->assertEquals(200, $response->getStatusCode());
+
+        $payload = $this->extractJsonPayload((string) $response->getBody());
+        $this->assertCount(12, $payload['apiDocument']['data'] ?? []);
+    }
+
+    #[Test]
+    public function custom_range_with_end_before_start_returns_all_discussions(): void
+    {
+        $response = $this->send(
+            $this->request('GET', '/')
+                ->withQueryParams([
+                    'date'  => 'custom',
+                    'start' => Carbon::now()->toDateString(),
+                    'end'   => Carbon::now()->subDays(10)->toDateString(),
+                ])
+        );
+
+        $this->assertEquals(200, $response->getStatusCode());
+
+        $payload = $this->extractJsonPayload((string) $response->getBody());
+        $this->assertCount(12, $payload['apiDocument']['data'] ?? []);
+    }
+
+    #[Test]
+    public function custom_range_with_malformed_dates_returns_all_discussions(): void
+    {
+        $response = $this->send(
+            $this->request('GET', '/')
+                ->withQueryParams([
+                    'date'  => 'custom',
+                    'start' => 'not-a-date',
+                    'end'   => 'also-not-a-date',
+                ])
+        );
+
+        $this->assertEquals(200, $response->getStatusCode());
+
+        $payload = $this->extractJsonPayload((string) $response->getBody());
+        $this->assertCount(12, $payload['apiDocument']['data'] ?? []);
     }
 }
